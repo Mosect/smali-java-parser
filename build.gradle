@@ -1,10 +1,11 @@
 plugins {
+    id 'java'
     id 'java-library'
     id 'maven-publish'
 }
 
 dependencies {
-    testImplementation("junit:junit:4.13.2")
+    testImplementation('junit:junit:4.13')
 }
 
 javadoc {

@@ -1,15 +1,11 @@
 package com.mosect.smali.java.parser;
 
 public enum SmaliTokenType {
-
+    UNKNOWN,
+    COMMENT,
     WHITESPACE,
     LINEFEED,
-    COMMENT,
     STRING,
-    ELEMENT,
-    KEYWORD,
-    NAME,
+    CHAR,
     SYMBOL,
-    NUMBER,
-    CLASSPATH
 }

@@ -3,26 +3,23 @@ package com.mosect.smali.java.parser;
 public class SmaliToken {
 
     private final SmaliTokenType type;
-    private String text;
+    private final String text;
 
     public SmaliToken(SmaliTokenType type, String text) {
         this.type = type;
         this.text = text;
     }
 
-    protected void setText(String text) {
-        this.text = text;
+    public SmaliTokenType getType() {
+        return type;
     }
 
     public String getText() {
         return text;
     }
 
-    public SmaliTokenType getType() {
-        return type;
-    }
-
-    public void check() throws SmaliTokenException {
+    public int length() {
+        return text.length();
     }
 
     @Override
