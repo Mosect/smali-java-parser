@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 public class SmaliTest {
@@ -24,11 +25,24 @@ public class SmaliTest {
     }
 
     @Test
+    public void testNumber() {
+        String str = ".field private static final C2:F = 3.49066E-4f";
+        SmaliParser smaliParser = new SmaliParser();
+        SmaliParseResult<List<SmaliToken>> result = smaliParser.parseTokens(str);
+        if (result.haveError()) {
+            for (SmaliParseError error : result.getErrors()) {
+                System.err.println(error);
+            }
+        }
+    }
+
+    @Test
     public void testTokens() throws Exception {
         File dir = new File("E:\\Temp\\2022012118\\official-menglar-1.1.28-2022011810");
         List<File> files = new ArrayList<>();
         listSmaliFiles(dir, files);
         SmaliParser smaliParser = new SmaliParser();
+        HashSet<String> unknownList = new HashSet<>();
         for (File file : files) {
             String text = readText(file);
             SmaliParseResult<List<SmaliToken>> result = smaliParser.parseTokens(text);
@@ -37,12 +51,21 @@ public class SmaliTest {
 //                    System.out.println(token.getText());
 //                }
 //            }
+            for (SmaliToken token : result.getResult()) {
+                if (token.getType() == SmaliTokenType.UNKNOWN) {
+                    unknownList.add(token.getText());
+                }
+            }
             if (result.haveError()) {
                 System.out.println("parseTokens: " + file);
                 for (SmaliParseError error : result.getErrors()) {
                     System.err.println(error);
                 }
+                throw new Exception("Invalid smali file: " + file);
             }
+        }
+        for (String str : unknownList) {
+            System.out.println("UnknownToken: " + str);
         }
     }
 

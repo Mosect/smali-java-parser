@@ -8,4 +8,6 @@ public enum SmaliTokenType {
     STRING,
     CHAR,
     SYMBOL,
+    NUMBER,
+    ELEMENT,
 }
