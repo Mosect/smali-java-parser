@@ -6,9 +6,13 @@ public class SmaliParseError {
     public final static int CODE_INVALID_CHAR = 2;
     public final static int CODE_INVALID_NUMBER = 3;
     public final static int CODE_INVALID_ELEMENT = 4;
+    public final static int CODE_END_ELEMENT_NAME_NOT_FOUND = 5;
+    public final static int CODE_INVALID_END_ELEMENT = 6;
 
     public final static int CODE_UNEXPECTED_TOKEN = 101;
     public final static int CODE_UNSUPPORTED_ELEMENT = 102;
+    public final static int CODE_INVALID_CLASS_PATH = 103;
+    public final static int CODE_UNSUPPORTED_TOKEN = 104;
 
     public static void initError(CharSequence text, SmaliParseError error, int offset) {
         if (null != text) {

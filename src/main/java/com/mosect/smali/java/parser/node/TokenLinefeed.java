@@ -1,9 +1,9 @@
 package com.mosect.smali.java.parser.node;
 
-public class SmaliLinefeed extends SmaliTokenNode {
+public class TokenLinefeed extends SmaliTokenNode {
 
-    SmaliLinefeed(String text) {
-        super(SmaliNodeType.LINEFEED, text);
+    TokenLinefeed(String text) {
+        super(SmaliNodeType.TOKEN_LINEFEED, text);
     }
 
     public boolean isCr() {

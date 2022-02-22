@@ -5,7 +5,7 @@ public class SmaliToken {
     private final SmaliTokenType type;
     private final String text;
 
-    public SmaliToken(SmaliTokenType type, String text) {
+    SmaliToken(SmaliTokenType type, String text) {
         this.type = type;
         this.text = text;
     }

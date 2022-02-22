@@ -30,15 +30,28 @@ public class SmaliNodeSource {
         return this.rawText;
     }
 
-    public List<SmaliToken> getTokens() {
-        return tokens;
-    }
-
     void setOffset(int offset) {
         this.offset = offset;
     }
 
-    public int getOffset() {
+    void next() {
+        ++offset;
+    }
+
+    SmaliToken current() {
+        return tokens.get(offset);
+    }
+
+    boolean hasCurrent() {
+        return offset < tokens.size();
+    }
+
+    int getCharOffset() {
+        int offset = 0;
+        for (int i = 0; i < this.offset; i++) {
+            SmaliToken token = tokens.get(i);
+            offset += token.length();
+        }
         return offset;
     }
 }

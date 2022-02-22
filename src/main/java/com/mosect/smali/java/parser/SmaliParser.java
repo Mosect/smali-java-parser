@@ -1,5 +1,7 @@
 package com.mosect.smali.java.parser;
 
+import com.mosect.smali.java.parser.util.SmaliUtils;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,7 +21,7 @@ public class SmaliParser {
         while (offset < text.length()) {
             char ch = text.charAt(offset);
             SmaliToken token = null;
-            if (isWhitespace(ch)) {
+            if (SmaliUtils.isWhitespace(ch)) {
                 // whitespace
                 token = nextWhitespace(text, offset);
             } else if (ch == '#') {
@@ -58,7 +60,7 @@ public class SmaliParser {
                         token = new SmaliToken(SmaliTokenType.SYMBOL, String.valueOf(ch));
                         break;
                     case '\r':
-                        if (match(text, offset, "\r\n")) {
+                        if (SmaliUtils.match(text, offset, "\r\n")) {
                             token = new SmaliToken(SmaliTokenType.LINEFEED, "\r\n");
                         } else {
                             token = new SmaliToken(SmaliTokenType.LINEFEED, "\r");
@@ -69,7 +71,7 @@ public class SmaliParser {
                         break;
                     default: // other is code char
                         for (String symbol : MULTI_CHARS_SYMBOL) {
-                            if (match(text, offset, symbol)) {
+                            if (SmaliUtils.match(text, offset, symbol)) {
                                 token = new SmaliToken(SmaliTokenType.SYMBOL, symbol);
                                 break;
                             }
@@ -100,11 +102,182 @@ public class SmaliParser {
         return result;
     }
 
+    /**
+     * parse token tree with tokens
+     *
+     * @param tokenResult tokens result
+     * @return SmaliTokenTree
+     */
+    public SmaliParseResult<SmaliTokenTreeNode> parseTokenTree(SmaliParseResult<List<SmaliToken>> tokenResult) {
+        return parseTokenTree(tokenResult.getText(), tokenResult.getResult());
+    }
+
+    /**
+     * parse token tree with tokens
+     *
+     * @param rawText raw text
+     * @param tokens  tokens
+     * @return SmaliTokenTree
+     */
+    public SmaliParseResult<SmaliTokenTreeNode> parseTokenTree(CharSequence rawText, List<SmaliToken> tokens) {
+        SmaliParseResult<SmaliTokenTreeNode> result = new SmaliParseResult<>();
+        SmaliTokenTreeNode tokenTree = new SmaliTokenTreeNode(null);
+        result.setText(rawText);
+        result.setResult(tokenTree);
+
+        int elementStart = 0;
+        List<SmaliTokenTreeNode> list = new ArrayList<>(8);
+        for (int i = 0; i < tokens.size(); ) {
+            SmaliToken token = tokens.get(i);
+            list.add(new SmaliTokenTreeNode(token));
+            if (token.getType() == SmaliTokenType.ELEMENT) {
+                if (".end".equals(token.getText())) {
+                    // .end element
+                    int endElementNameIndex = findEndElementName(tokens, i + 1);
+                    if (endElementNameIndex >= 0) {
+                        // found .end element name
+
+                        // first: add .end tokens
+                        for (int j = i + 1; j <= endElementNameIndex; j++) {
+                            list.add(new SmaliTokenTreeNode(tokens.get(j)));
+                        }
+
+                        // second: findElementWithName
+                        SmaliToken endElementName = tokens.get(endElementNameIndex);
+                        int elementIndex = findElementWithName(list, endElementNameIndex, endElementName.getText());
+                        if (elementIndex >= 0) {
+                            // found match .end name element
+                            handleTokenTree(list, elementStart, i);
+                            handleTokenTree(list, elementIndex, endElementNameIndex + 1);
+                            // contains .end
+                            list.get(elementIndex).setContainsEnd(true);
+
+                            elementStart = endElementNameIndex + 1;
+                            i = endElementNameIndex + 1;
+                        } else {
+                            SmaliParseError error = new SmaliParseError(
+                                    SmaliParseError.CODE_INVALID_END_ELEMENT,
+                                    "Unsupported .end with name " + endElementName.getText()
+                            );
+                            error.setOffset(getTextOffset(tokens, i + 1));
+                            result.getErrors().add(error);
+                            break; // stop parse
+                        }
+                    } else {
+                        // .end element name not found
+                        SmaliParseError error = new SmaliParseError(
+                                SmaliParseError.CODE_END_ELEMENT_NAME_NOT_FOUND,
+                                "End element name not found"
+                        );
+                        error.setOffset(getTextOffset(tokens, i + 1));
+                        result.getErrors().add(error);
+                        break; // stop parse
+                    }
+                } else {
+                    // other element
+                    handleTokenTree(list, elementStart, i);
+                    elementStart = i;
+                    ++i;
+                }
+            } else {
+                // not a element
+                ++i;
+            }
+        }
+        handleTokenTree(list, elementStart, list.size());
+
+        tokenTree.setChildren(new ArrayList<>());
+        for (SmaliTokenTreeNode tree : list) {
+            if (null == tree.getParent()) {
+                tree.setParent(tokenTree);
+                tokenTree.getChildren().add(tree);
+            }
+        }
+
+        for (SmaliParseError error : result.getErrors()) {
+            SmaliParseError.initError(rawText, error, error.getOffset());
+        }
+
+        return result;
+    }
+
+    private static int findEndElementName(List<SmaliToken> list, int offset) {
+        for (int i = offset; i < list.size(); i++) {
+            SmaliToken token = list.get(i);
+            switch (token.getType()) {
+                case UNKNOWN:
+                    switch (token.getText()) {
+                        case "class":
+                        case "super":
+                        case "annotation":
+                        case "subannotation":
+                        case "source":
+                        case "method":
+                        case "line":
+                        case "field":
+                        case "locals":
+                        case "enum":
+                        case "implements":
+                        case "catch":
+                        case "catchall":
+                        case "param":
+                        case "array-data":
+                        case "sparse-switch":
+                        case "packed-switch":
+                            return i;
+                        default:
+                            return -1;
+                    }
+                case WHITESPACE:
+                case LINEFEED:
+                case COMMENT:
+                    break;
+                default:
+                    return -1;
+            }
+        }
+        return -1;
+    }
+
+    private static int findElementWithName(List<SmaliTokenTreeNode> list, int end, String name) {
+        String elementTag = "." + name;
+        for (int i = end - 1; i >= 0; i--) {
+            SmaliTokenTreeNode tree = list.get(i);
+            if (!tree.isContainsEnd() && tree.getToken().getType() == SmaliTokenType.ELEMENT) {
+                if (elementTag.equals(tree.getToken().getText())) {
+                    // match .end name
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static void handleTokenTree(List<SmaliTokenTreeNode> list, int start, int end) {
+        if (end - start > 0) {
+            SmaliTokenTreeNode parent = list.get(start);
+            List<SmaliTokenTreeNode> children = parent.getChildren();
+            if (null == children) {
+                children = new ArrayList<>(8);
+                parent.setChildren(children);
+            }
+            for (int i = start; i < end; i++) {
+                SmaliTokenTreeNode child = list.get(i);
+                if (null == child.getParent()) {
+                    if (parent != child) {
+                        child.setParent(parent);
+                    }
+                    children.add(child);
+                }
+            }
+        }
+    }
+
     private static SmaliToken nextWhitespace(CharSequence text, int offset) {
         int end = text.length();
         for (int i = offset; i < text.length(); i++) {
             char ch = text.charAt(i);
-            if (!isWhitespace(ch)) {
+            if (!SmaliUtils.isWhitespace(ch)) {
                 end = i;
                 break;
             }
@@ -146,7 +319,7 @@ public class SmaliParser {
             switch (mode) {
                 case 0:
                     if (ch != bound) {
-                        throw new SmaliException("Missing string start symbol " + charStr(bound), i);
+                        throw new SmaliException("Missing string start symbol " + SmaliUtils.charStr(bound), i);
                     }
                     mode = 1;
                     break;
@@ -186,21 +359,20 @@ public class SmaliParser {
                             size = 0;
                             break;
                         default:
-                            if (ch >= '0' && ch <= '7') {
+                            if (SmaliUtils.isOct(ch)) {
                                 // \xxx
                                 // oct unicode mode
                                 mode = 4;
                                 size = 1;
                             } else {
-                                throw new SmaliException("Invalid char after \\ is " + charStr(ch), i);
+                                throw new SmaliException("Invalid char after \\ is " + SmaliUtils.charStr(ch), i);
                             }
                             break;
                     }
                     break;
                 case 3: // hex unicode mode
-                    boolean isHex = (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F');
-                    if (!isHex) {
-                        throw new SmaliException("Invalid char after \\u is " + charStr(ch), i);
+                    if (!SmaliUtils.isHex(ch)) {
+                        throw new SmaliException("Invalid char after \\u is " + SmaliUtils.charStr(ch), i);
                     }
                     if (++size == 4) {
                         // end hex
@@ -209,8 +381,7 @@ public class SmaliParser {
                     }
                     break;
                 case 4: // oct unicode mode
-                    boolean isOct = ch >= '0' && ch <= '7';
-                    if (isOct) {
+                    if (SmaliUtils.isOct(ch)) {
                         if (++size == 3) {
                             // end oct
                             mode = 1;
@@ -225,10 +396,6 @@ public class SmaliParser {
             }
         }
         throw new SmaliException("Missing string end symbol \"", text.length());
-    }
-
-    private static String charStr(char ch) {
-        return String.format("[%s,%02x]", ch, (int) ch);
     }
 
     private static void parseCode(CharSequence text, int start, int end, SmaliParseResult<List<SmaliToken>> result) {
@@ -268,7 +435,7 @@ public class SmaliParser {
                 case 0: // none
                     if (ch == '0') {
                         mode = 1; // 0 mode
-                    } else if (isDec(ch)) {
+                    } else if (SmaliUtils.isDec(ch)) {
                         mode = 2; // dec mode
                     } else {
                         // invalid number
@@ -280,7 +447,7 @@ public class SmaliParser {
                         mode = 4; // hex mode
                     } else if (ch == '.') {
                         mode = 3; // point mode
-                    } else if (isDec(ch)) {
+                    } else if (SmaliUtils.isDec(ch)) {
                         mode = 5; // oct mode
                     } else if (ch == 'f' || ch == 'L') {
                         mode = 6; // end mode
@@ -291,7 +458,7 @@ public class SmaliParser {
                 case 2: // dec mode
                     if (ch == '.') {
                         mode = 3; // point mode
-                    } else if (isDec(ch)) {
+                    } else if (SmaliUtils.isDec(ch)) {
                         // valid char
                     } else if (ch == 'f' || ch == 'L' || ch == 't' || ch == 's') {
                         mode = 6; // end mode
@@ -307,7 +474,7 @@ public class SmaliParser {
                     }
                     break;
                 case 4: // hex mode
-                    if (isHex(ch)) {
+                    if (SmaliUtils.isHex(ch)) {
                         // valid char
                     } else if (ch == 'L' || ch == 't' || ch == 's') {
                         mode = 6; // end mode
@@ -316,7 +483,7 @@ public class SmaliParser {
                     }
                     break;
                 case 5: // oct mode
-                    if (isOct(ch)) {
+                    if (SmaliUtils.isOct(ch)) {
                         // valid char
                     } else if (ch == 'L') {
                         mode = 6; // end mode
@@ -329,7 +496,7 @@ public class SmaliParser {
                 case 7: // tail mode
                     if (ch == 'E' || ch == 'e') {
                         mode = 8; // exponential mode
-                    } else if (isDec(ch)) {
+                    } else if (SmaliUtils.isDec(ch)) {
                         // valid char
                     } else if (ch == 'f') {
                         mode = 6; // end mode
@@ -340,7 +507,7 @@ public class SmaliParser {
                 case 8: // exponential mode
                     if (ch == '-') {
                         mode = 9; // negative exponential mode
-                    } else if (isDec(ch)) {
+                    } else if (SmaliUtils.isDec(ch)) {
                         // valid char
                         mode = 10; // end exponential mode
                     } else {
@@ -348,7 +515,7 @@ public class SmaliParser {
                     }
                     break;
                 case 9: // negative exponential mode
-                    if (isDec(ch)) {
+                    if (SmaliUtils.isDec(ch)) {
                         // valid char
                         mode = 10; // end exponential mode
                     } else {
@@ -358,7 +525,7 @@ public class SmaliParser {
                 case 10: // end exponential mode
                     if (ch == 'f') {
                         mode = 6; // end mode
-                    } else if (isDec(ch)) {
+                    } else if (SmaliUtils.isDec(ch)) {
                         // valid char
                     } else {
                         throw new SmaliException("Invalid exponential tail number " + text.subSequence(start, end), start);
@@ -407,54 +574,11 @@ public class SmaliParser {
         }
     }
 
-    private static boolean match(CharSequence text, int offset, String tag) {
-        if (text.length() - offset >= tag.length()) {
-            if (tag.length() > 1) {
-                for (int i = 0; i < tag.length(); i++) {
-                    char ch1 = tag.charAt(i);
-                    char ch2 = text.charAt(offset + i);
-                    if (ch1 != ch2) return false;
-                }
-                return true;
-            } else {
-                return text.charAt(offset) == tag.charAt(0);
-            }
+    private static int getTextOffset(List<SmaliToken> tokens, int index) {
+        int offset = 0;
+        for (int i = 0; i < index; i++) {
+            offset += tokens.get(i).length();
         }
-        return false;
-    }
-
-
-    private static boolean match(CharSequence text, int start, int end, String tag) {
-        if (end - start == tag.length()) {
-            for (int i = 0; i < tag.length(); i++) {
-                char ch1 = tag.charAt(i);
-                char ch2 = text.charAt(start + i);
-                if (ch1 != ch2) return false;
-            }
-            return true;
-        }
-        return false;
-    }
-
-    private static boolean isWhitespace(char ch) {
-        switch (ch) {
-            case ' ':
-            case '\t':
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    private static boolean isOct(char ch) {
-        return ch >= '0' && ch <= '7';
-    }
-
-    private static boolean isDec(char ch) {
-        return ch >= '0' && ch <= '9';
-    }
-
-    private static boolean isHex(char ch) {
-        return isDec(ch) || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F');
+        return offset;
     }
 }

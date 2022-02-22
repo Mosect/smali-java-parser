@@ -7,7 +7,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 
 public class SmaliTest {
@@ -42,8 +41,8 @@ public class SmaliTest {
         List<File> files = new ArrayList<>();
         listSmaliFiles(dir, files);
         SmaliParser smaliParser = new SmaliParser();
-        HashSet<String> unknownList = new HashSet<>();
         for (File file : files) {
+            System.out.println("Smali: " + file);
             String text = readText(file);
             SmaliParseResult<List<SmaliToken>> result = smaliParser.parseTokens(text);
 //            for (SmaliToken token : result.getResult()) {
@@ -51,21 +50,19 @@ public class SmaliTest {
 //                    System.out.println(token.getText());
 //                }
 //            }
-            for (SmaliToken token : result.getResult()) {
-                if (token.getType() == SmaliTokenType.UNKNOWN) {
-                    unknownList.add(token.getText());
-                }
-            }
-            if (result.haveError()) {
-                System.out.println("parseTokens: " + file);
-                for (SmaliParseError error : result.getErrors()) {
-                    System.err.println(error);
-                }
-                throw new Exception("Invalid smali file: " + file);
-            }
+            checkError(file, result);
+            SmaliParseResult<SmaliTokenTreeNode> treeResult = smaliParser.parseTokenTree(result);
+            checkError(file, treeResult);
         }
-        for (String str : unknownList) {
-            System.out.println("UnknownToken: " + str);
+    }
+
+    private void checkError(File file, SmaliParseResult<?> result) throws Exception {
+        if (result.haveError()) {
+            System.out.println("ErrorSmali: " + file);
+            for (SmaliParseError error : result.getErrors()) {
+                System.err.println(error);
+            }
+            throw new Exception("Invalid smali file: " + file);
         }
     }
 
